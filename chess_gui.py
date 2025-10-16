@@ -16,7 +16,7 @@ Task List:
 ✅ Add sound effects
 - Add AI player
 - websocket online multiplayer
-🟨 Implement move history + Openings
+✅ Implement move history + Openings
 - Improve Performance
 """
 
@@ -43,6 +43,7 @@ import math
 import os
 import pprint
 import copy
+import csv
 
 ### Base GUI Element Class ###
 class GuiElement:
@@ -259,7 +260,11 @@ class Button(GuiElement):
 ### Textbox Object ###
 class Textbox(GuiElement):
     def __init__(self, xpos: int=0, ypos: int=0, width: int=100, height: int=100, text="", color=QColor(0, 0, 0, 0),
-                 textcolor=QColor(255, 255, 255), fontsize=10, pen=True, parent=None, autoscroll: bool=False):
+                 textcolor=QColor(255, 255, 255), fontsize=10, pen: QPen=Qt.NoPen, parent=None, autoscroll: bool=False,
+                 deactivate_scrollbars: int=0):
+        """
+        - deactivate_scrollbars: 0 = none, 1 = vertical, 2 = horizontal, 3 = both
+        """
         super().__init__(xpos, ypos, width, height, color, parent)
         self.text = text
         self.color = color
@@ -267,6 +272,7 @@ class Textbox(GuiElement):
         self.fontsize = fontsize
         self.pen = pen
         self.autoscroll = autoscroll
+        self.deactivate_scrollbars = deactivate_scrollbars
 
         # Scrolling state
         self.vert_scroll = 0.0
@@ -329,6 +335,11 @@ class Textbox(GuiElement):
         self.total_text_width = max(metrics.horizontalAdvance(line) for line in self.text.splitlines() or [""])
         self.width_fit = self.total_text_width / (width - self.outer_scroll_size)
 
+        if self.deactivate_scrollbars in (1, 3):
+            self.height_fit = 1
+        if self.deactivate_scrollbars in (2, 3):
+            self.width_fit = 1
+
         self.update()
 
     # ---------------------------------------------------
@@ -340,7 +351,7 @@ class Textbox(GuiElement):
                            self.topleft.y() + self.ypos,
                            self.width, self.height)
         painter.setBrush(self.color)
-        painter.setPen(QPen(QColor(200, 200, 200, 220), 2) if self.pen else Qt.NoPen)
+        painter.setPen(self.pen)
         painter.drawRect(self.rect)
 
         self._draw_scrollable_text(painter)
@@ -353,13 +364,14 @@ class Textbox(GuiElement):
         painter.setFont(font)
         metrics = QFontMetrics(font)
 
-        Spacing = 10
+        xSpacing = 10
+        ySpacing = 3
 
         xpos, ypos, width, height = self.xpos, self.ypos, self.width, self.height
         xpos += self.topleft.x()
         ypos += self.topleft.y()
-        width -= Spacing
-        height -= Spacing
+        width -= xSpacing
+        height -= ySpacing
 
         # --- Calculate vert text dimensions and scrollbar needs ---
         scrollbar_inner_height = height - (self.outer_scroll_size * 2) - self.inner_scroll_size
@@ -374,10 +386,10 @@ class Textbox(GuiElement):
         # --- Draw text content ---
         y_offset = self.vert_scroll * (self.total_text_height - (height - (self.outer_scroll_size * 2)))
         x_offset = self.horiz_scroll * (self.total_text_width - (width - (self.outer_scroll_size * 2)))
-        text_x = xpos + Spacing
-        text_y = ypos + Spacing
-        textbox_width = int(width-(self.outer_scroll_size*2)) if self.height_fit > 1 else width - Spacing
-        textbox_height = int(height-(self.outer_scroll_size*2)) if self.width_fit > 1 else height - Spacing
+        text_x = xpos + xSpacing
+        text_y = ypos + ySpacing
+        textbox_width = int(width-(self.outer_scroll_size*2)) if self.height_fit > 1 else width - xSpacing
+        textbox_height = int(height-(self.outer_scroll_size*2)) if self.width_fit > 1 else height - ySpacing
 
         static_textrect = QRectF(text_x, text_y, textbox_width, textbox_height)
         dynamic_textrect = QRectF(text_x - x_offset, text_y - y_offset, self.total_text_width + textbox_width, self.total_text_height + textbox_height)
@@ -389,8 +401,8 @@ class Textbox(GuiElement):
             painter.drawText(dynamic_textrect, Qt.AlignLeft | Qt.AlignTop, self.text)
             painter.setClipping(False)
 
-        width += Spacing
-        height += Spacing
+        width += xSpacing
+        height += ySpacing
         # --- Draw vertical scrollbar ---
         if self.height_fit > 1:
             self._draw_scrollbar(painter, xpos, ypos, width, height,
@@ -1194,6 +1206,7 @@ class WindowGui(QWidget):
         self.knocked_pieces = KnockedPieces(parent=self)
 
         self.MHList = []
+        self.prevMHList = []
         self.fiftyMoveCounter = 0
 
     def paintEvent(self, event):
@@ -1635,24 +1648,38 @@ class WindowGui(QWidget):
         if hasattr(self, 'MHTextbox') == False:
             self.OpeningTextbox = Textbox(xpos=-MoveHistoryWidth-1, ypos=self.ExitSize + self.WindowWidth/4,
                                           width=MoveHistoryWidth, height=opening_height,
-                                          text="Opening Info", color=QColor(0, 0, 0, 180),
-                                          textcolor=QColor(255, 255, 255), fontsize=10,
-                                          autoscroll=True, pen=True,
-                                          parent=self)
+                                          text="Starting Position", color=QColor(0, 0, 0, 180),
+                                          textcolor=QColor(255, 255, 255), fontsize=11,
+                                          autoscroll=False, pen=QPen(QColor(200, 200, 200, 220), 2),
+                                          parent=self, deactivate_scrollbars=0)
             self.MHTextbox = Textbox(xpos=-MoveHistoryWidth-1, ypos=self.ExitSize + self.WindowWidth/4 + opening_height,
                                      width=MoveHistoryWidth, height=MoveHistoryHeight-opening_height,
                                      text="", color=QColor(0, 0, 0, 180),
                                      textcolor=QColor(255, 255, 255), fontsize=11,
-                                     autoscroll=True, pen=True,
+                                     autoscroll=True, pen=QPen(QColor(200, 200, 200, 220), 2),
                                      parent=self)
-        MHText = ""
-        for i, move in enumerate(self.MHList):
-            if i % 2 == 0:
-                MHText += f"{(i//2)+1}.  {move}" + " " * (10 - len(move))
-            else:
-                MHText += f"{move}\n"
-        
-        self.MHTextbox.set_text(MHText)
+        if self.prevMHList != self.MHList:
+            OpeningList = []
+            MHText = ""
+            for i, move in enumerate(self.MHList):
+                if i % 2 == 0:
+                    MHText += f"{(i//2)+1}.  {move}" + " " * (10 - len(move))
+                    OpeningList.append(f'{(i//2)+1}.{move}')
+                else:
+                    MHText += f"{move}\n"
+                    OpeningList.append(f'{move}')
+            
+            self.MHTextbox.set_text(MHText)
+
+            rowname = "moves_list"
+            with open("openings.csv", newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row[rowname] == f"{OpeningList}":
+                        OpeningName = row["Opening"]
+                        self.OpeningTextbox.set_text(OpeningName)
+                        return
+        self.prevMHList = self.MHList.copy()
 
     ## Window Control Methods ###
     def close_app(self):
