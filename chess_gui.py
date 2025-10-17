@@ -10,7 +10,7 @@ Task List:
 - Add Premoves
 ✅ Add Move Planning
 ✅ Add Click-to-move option 
-🟨 Add more Cosmetics
+✅ Add more Cosmetics
 - Add more/better animations
 ✅ Add Increment Option to Clock
 ✅ Add sound effects
@@ -22,7 +22,6 @@ Task List:
 
 ### Settings ###
 
-BOARD_VARIANT = 1       # 0 = Black and White, 1 = Classic
 INCREMENT = 2           # Increment in seconds
 TIME = 5
 
@@ -34,11 +33,10 @@ from PyQt5.QtCore import QRectF, Qt, QPointF
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtCore import QTimer, QElapsedTimer, QRect, QUrl
 from PyQt5.QtMultimedia import QSoundEffect
-from PyQt5.QtWidgets import QLabel, QVBoxLayout, QGraphicsOpacityEffect
+from PyQt5.QtWidgets import QLabel
 from PyQt5.QtCore import QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 from screeninfo import get_monitors
 import sys
-import time
 import math
 import os
 import pprint
@@ -256,6 +254,7 @@ class Button(GuiElement):
 
     def on_click(self):
         self.action()
+
 
 ### Textbox Object ###
 class Textbox(GuiElement):
@@ -1173,6 +1172,10 @@ class PromotionWindow(QWidget):
         self.parent.SM.play("promote")
         self.close()  # closes the popup
 
+    def closeEvent(self, a0):
+        self.parent.promotion_window = None
+        return super().closeEvent(a0)
+
 ### Settings Window ###
 class SettingsWindow(QWidget):
     def __init__(self, parent=None, squaresize=120):
@@ -1185,26 +1188,69 @@ class SettingsWindow(QWidget):
         self.xpos = int((self.parent.WindowWidth / 2) - (squaresize * self.items_per_row) / 2)
         self.ypos = int((self.parent.WindowHeight / 2) - (squaresize * ((item_count + self.items_per_row - 1) // self.items_per_row)) / 2) + self.parent.ExitSize/2
         self.squaresize = int(squaresize)
-        self.BGcolor = QColor(40, 40, 40, 220)
+        self.BGcolor = QColor(40, 40, 40, 0)
+        self.selectColor = QColor(50, 50, 150, 150)
+        self.color = QColor(50, 50, 50, 200)
+        self.path = os.path.dirname(os.path.abspath(__file__))
 
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         monitor = get_monitors()[0]
         self.setGeometry(0, 0, monitor.width, monitor.height)
+        self.selectedButton = [None, None]
+        self.initButtons = []
+        self.Mode = 0  # 0: Figures, 1: Boards
 
-        self.init_promotion_buttons()
+        self.init_gui()
+        self.init_figure_buttons()
+        self.init_board_buttons()
         self.show()
 
-    def init_promotion_buttons(self):
-        path = os.path.dirname(os.path.abspath(__file__))
-        self.buttons = []
+    def init_gui(self):
+        self.ExitSize = 40
+        exitImgPath = os.path.join(self.path, "images", "Exit_Icon.png")
+        ExitImage = QPixmap(exitImgPath)
+        ExitImage = ExitImage.scaled(int(
+            self.ExitSize*0.8), int(self.ExitSize*0.8), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.ExitButton = Button(text="Exit",
+                                 image=ExitImage,
+                                 width=self.ExitSize+40,
+                                 height=self.ExitSize,
+                                 color=QColor(255, 0, 0, 160),
+                                 textcolor=QColor(255, 255, 255),
+                                 hovercolor=QColor(255, 0, 0, 220),
+                                 hovertextcolor=QColor(255, 255, 255),
+                                 xpos=self.xpos + (self.squaresize*self.items_per_row) - (self.ExitSize + 40),
+                                 ypos=self.ypos - self.ExitSize,
+                                 action=self.close,
+                                 parent=self)
+
+        width = self.ExitSize+100
+        self.FiguresButton = Button(text="Figures",
+                                 width=width,
+                                 height=self.ExitSize,
+                                 xpos=self.xpos + (width)*0,
+                                 ypos=self.ypos - self.ExitSize,
+                                 action=self.show_Figures,
+                                 parent=self)
+
+        self.BoardsButton = Button(text="Boards",
+                                 width=width,
+                                 height=self.ExitSize,
+                                 xpos=self.xpos + (width)*1,
+                                 ypos=self.ypos - self.ExitSize,
+                                 action=self.show_Boards,
+                                 parent=self)
+        
+        self.initButtons.append(self.ExitButton)
+        self.initButtons.append(self.FiguresButton)
+        self.initButtons.append(self.BoardsButton)
+
+    def init_figure_buttons(self):
+        self.figures = []
         count = 0
-        for style in os.listdir(os.path.join(path, "ChessImgPNG")):
-            if self.parent.PieceStyle == style:
-                color = QColor(50, 120, 50, 150)
-            else:
-                color = QColor(50, 50, 50, 150)
-            self.image = QPixmap(os.path.join(path, "ChessImgPNG", style, "bk.png"))
+        for style in os.listdir(os.path.join(self.path, "ChessImgPNG")):
+            self.image = QPixmap(os.path.join(self.path, "ChessImgPNG", style, "bk.png"))
             self.image = self.image.scaled(int(self.squaresize), int(self.squaresize), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             button = Button(
                 image=self.image,
@@ -1213,21 +1259,20 @@ class SettingsWindow(QWidget):
                 height=self.squaresize,
                 xpos=((count % self.items_per_row) * self.squaresize) + self.xpos,
                 ypos=self.ypos + (self.squaresize * (count // self.items_per_row)),
-                color=color,
+                color=self.color,
                 hovercolor=QColor(100, 100, 100, 250),
                 textcolor=QColor(255, 255, 255),
                 hovertextcolor=QColor(255, 255, 255),
                 action=lambda pc=style: self.select_piece(pc),
                 parent=self
             )
-            self.buttons.append(button)
+            self.figures.append(button)
+            if self.parent.PieceStyle == style:
+                button.color = self.selectColor
+                self.selectedButton[0] = button
             count += 1
         vectorlist = ["ChessImgVec"]
         for style in vectorlist:
-            if self.parent.PieceStyle == style:
-                color = QColor(50, 150, 50, 150)
-            else:
-                color = QColor(50, 50, 50, 200)
             self.image = self.parent.SVG.getSVG(f"KingBlack", int(self.squaresize))
             button = Button(
                 image=self.image,
@@ -1236,14 +1281,51 @@ class SettingsWindow(QWidget):
                 height=self.squaresize,
                 xpos=((count % self.items_per_row) * self.squaresize) + self.xpos,
                 ypos=self.ypos + (self.squaresize * (count // self.items_per_row)),
-                color=color,
+                color=self.color,
                 hovercolor=QColor(100, 100, 100, 250),
                 textcolor=QColor(255, 255, 255),
                 hovertextcolor=QColor(255, 255, 255),
                 action=lambda pc=style: self.select_piece(pc),
                 parent=self
             )
-            self.buttons.append(button)
+            self.figures.append(button)
+            if self.parent.PieceStyle == style:
+                button.color = self.selectColor
+                self.selectedButton[0] = button
+            count += 1
+
+        self.WindowWidth = self.squaresize * self.items_per_row
+        self.WindowHeight = self.squaresize * ((count + self.items_per_row - 1) // self.items_per_row)
+
+    def init_board_buttons(self):
+        self.boards = []
+        count = 0
+        boardList = ["black", "classic"] + os.listdir(os.path.join(self.path, "ChessBoards", "Preview"))
+        for style in boardList:
+            if style in ["black", "classic"]:
+                imgpath = os.path.join(self.path, "ChessBoards", style + ".png")
+            else:
+                imgpath = os.path.join(self.path, "ChessBoards", "Preview", style)
+            self.image = QPixmap(imgpath)
+            self.image = self.image.scaled(int(self.squaresize), int(self.squaresize), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            button = Button(
+                image=self.image,
+                text=style,
+                width=self.squaresize,
+                height=self.squaresize,
+                xpos=((count % self.items_per_row) * self.squaresize) + self.xpos,
+                ypos=self.ypos + (self.squaresize * (count // self.items_per_row)),
+                color=self.color,
+                hovercolor=QColor(100, 100, 100, 250),
+                textcolor=QColor(255, 255, 255),
+                hovertextcolor=QColor(255, 255, 255),
+                action=lambda pc=style: self.select_board(pc),
+                parent=self
+            )
+            if self.parent.BoardStyle == style:
+                button.color = self.selectColor
+                self.selectedButton[1] = button
+            self.boards.append(button)
             count += 1
 
         self.WindowWidth = self.squaresize * self.items_per_row
@@ -1251,27 +1333,48 @@ class SettingsWindow(QWidget):
 
     def paintEvent(self, event):
         self.topleft = self.parent.topleft
-        x = self.xpos + (self.topleft.x() if self.topleft else 0)
-        y = self.ypos + (self.topleft.y() if self.topleft else 0)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(x, y, self.WindowWidth, self.WindowHeight)
-        painter.setBrush(self.BGcolor)
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(rect)
 
-        for button in self.buttons:
+        if self.Mode == 0:
+            for button in self.figures:
+                button.paint(painter)
+        elif self.Mode == 1:
+            for button in self.boards:
+                button.paint(painter)
+        for button in self.initButtons:
             button.paint(painter)
 
+    def show_Boards(self):
+        self.Mode = 1
+        self.update()
+
+    def show_Figures(self):
+        self.Mode = 0
+        self.update()
+
     def mouseMoveEvent(self, event):
-        for button in self.buttons:
-            button.hovered = button.contains(event.pos())
+        #for button in self.buttons:
+        #    button.hovered = button.contains(event.pos())
         self.update()
 
     def mousePressEvent(self, event):
-        for button in self.buttons:
+        visible = [self.figures, self.boards][self.Mode]
+        for button in visible + self.initButtons:
             if button.contains(event.pos()):
                 button.on_click()
+                if button in self.figures + self.boards:
+                    self.selectedButton[self.Mode].color = self.color
+                    self.selectedButton[self.Mode] = button
+                    self.selectedButton[self.Mode].color = self.selectColor
+                    self.update()
+                elif button in [self.FiguresButton, self.BoardsButton]:
+                    button.color = QColor(100, 100, 100, 250)
+                    if self.Mode == 0:
+                        self.BoardsButton.color = QColor(50, 50, 50, 200)
+                    else:
+                        self.FiguresButton.color = QColor(50, 50, 50, 200)
+                    self.update()
 
     def contains(self, pos):
         rect = QRectF(self.xpos, self.ypos, self.width, self.height)
@@ -1280,8 +1383,18 @@ class SettingsWindow(QWidget):
     def select_piece(self, style):
         self.parent.PieceStyle = style
         self.parent.SM.play("promote")
-        self.close()  # closes the popup
+        self.update()
+        self.parent.update()
 
+    def select_board(self, style):
+        self.parent.BoardStyle = style
+        self.parent.SM.play("promote")
+        self.update()
+        self.parent.update()
+
+    def closeEvent(self, a0):
+        self.parent.settings_window = None
+        return super().closeEvent(a0)
 
 ### Main Window ###
 class WindowGui(QWidget):
@@ -1339,6 +1452,7 @@ class WindowGui(QWidget):
 
         self.settings_window = None
         self.PieceStyle = "ChessImgVec"
+        self.BoardStyle = "classic"
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1361,7 +1475,7 @@ class WindowGui(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawPath(winrect)
 
-        self.chess_pattern(painter, BOARD_VARIANT)
+        self.chess_pattern(painter, self.BoardStyle)
 
         self.arrowList = []
         for Marker in self.MarkerList:
@@ -1450,9 +1564,9 @@ class WindowGui(QWidget):
         self.Line = Line(0, 50, self.WindowWidth, 50, width=2, parent=self)
 
     ### Chess Related Methods ###
-    def chess_pattern(self, painter, var=0):
+    def chess_pattern(self, painter, var="classic"):
         square_size = self.WindowWidth/8
-        if var == 0:
+        if var == "black":
             grayscale = int(0.3*255)
             color = QColor(grayscale, grayscale, grayscale, 200)
             for row in range(8):
@@ -1466,7 +1580,7 @@ class WindowGui(QWidget):
                             square_size, square_size
                         )
                         painter.drawRect(square_rect)
-        elif var == 1:
+        elif var == "classic":
             for row in range(8):
                 for col in range(8):
                     if (row + col) % 2 == 0:
@@ -1481,6 +1595,11 @@ class WindowGui(QWidget):
                         square_size, square_size
                     )
                     painter.drawRect(square_rect)
+        else:
+            imagePath = os.path.join(self.path, "ChessBoards", "Boards", var)
+            boardImage = QPixmap(imagePath)
+            boardImage = boardImage.scaled(int(self.WindowWidth), int(self.WindowWidth), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            painter.drawPixmap(int(self.topleft.x()), int(self.topleft.y() + self.ExitSize), boardImage)
 
     def init_chess(self):
         for color in range(2):
@@ -1941,6 +2060,8 @@ class WindowGui(QWidget):
             self.update()
             if self.promotion_window:
                 self.promotion_window.update()
+            if self.settings_window:
+                self.settings_window.update()
         self.check_hover(event.pos())
 
     def wheelEvent(self, event):
