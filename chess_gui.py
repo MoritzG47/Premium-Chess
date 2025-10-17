@@ -10,7 +10,7 @@ Task List:
 - Add Premoves
 ✅ Add Move Planning
 ✅ Add Click-to-move option 
-- Add more Cosmetics
+🟨 Add more Cosmetics
 - Add more/better animations
 ✅ Add Increment Option to Clock
 ✅ Add sound effects
@@ -22,7 +22,7 @@ Task List:
 
 ### Settings ###
 
-BOARD_VARIANT = 0       # 0 = Black and White, 1 = Classic
+BOARD_VARIANT = 1       # 0 = Black and White, 1 = Classic
 INCREMENT = 2           # Increment in seconds
 TIME = 5
 
@@ -615,6 +615,10 @@ class Figure(GuiElement):
         self.EnPassant = False
         self.validMovesList = []
         self.selected = None
+        self.currentPieceStyle = "ChessImgVec"
+        pieceMap = {"Pawn": "p", "Knight": "n", "Bishop": "b",
+                    "Rook": "r", "Queen": "q", "King": "k"}
+        self.pgnChar = pieceMap[self.__class__.__name__]
 
     ### Properties ###
     @property
@@ -645,6 +649,14 @@ class Figure(GuiElement):
     def paint(self, painter: QPainter):
         x = self.current_pos.x() + self.offset.x()
         y = self.current_pos.y() + self.offset.y()
+
+        if self.currentPieceStyle != self.parent.PieceStyle:
+            self.currentPieceStyle = self.parent.PieceStyle
+            if self.currentPieceStyle == "ChessImgVec":
+                self.image = self.parent.SVG.getSVG(f"{self.__class__.__name__}{'White' if self.color == 0 else 'Black'}", int(self.squaresize))
+            else:
+                self.image = QPixmap(os.path.join(self.parent.path, "ChessImgPNG", self.currentPieceStyle, f"{'w' if self.color == 0 else 'b'}{self.pgnChar}.png"))
+                self.image = self.image.scaled(int(self.squaresize), int(self.squaresize), Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
         if self.hovered:
             painter.setBrush(Qt.NoBrush)
@@ -1090,6 +1102,8 @@ class PromotionWindow(QWidget):
         self.WindowWidth = squaresize * 4
         self.WindowHeight = squaresize
         self.BGcolor = QColor(40, 40, 40, 220)
+        self.pieceMap = {"Pawn": "p", "Knight": "n", "Bishop": "b",
+                    "Rook": "r", "Queen": "q", "King": "k"}
 
         self.selected_piece = None
 
@@ -1105,7 +1119,11 @@ class PromotionWindow(QWidget):
         piece_classes = [Queen, Rook, Bishop, Knight]
         self.buttons = []
         for i, piece_class in enumerate(piece_classes):
-            self.image = self.parent.SVG.getSVG(f"{piece_class.__name__}{'White' if self.color == 0 else 'Black'}", int(self.squaresize))
+            if self.parent.PieceStyle == "ChessImgVec":
+                self.image = self.parent.SVG.getSVG(f"{piece_class.__name__}{'White' if self.color == 0 else 'Black'}", int(self.squaresize))
+            else:
+                self.image = QPixmap(os.path.join(self.parent.path, "ChessImgPNG", self.parent.PieceStyle, f"{'w' if self.color == 0 else 'b'}{self.pieceMap[piece_class.__name__]}.png"))
+                self.image = self.image.scaled(int(self.squaresize), int(self.squaresize), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             button = Button(
                 image=self.image,
                 text=piece_class.__name__,
@@ -1154,6 +1172,116 @@ class PromotionWindow(QWidget):
         self.selected_piece = piece_class
         self.parent.SM.play("promote")
         self.close()  # closes the popup
+
+### Settings Window ###
+class SettingsWindow(QWidget):
+    def __init__(self, parent=None, squaresize=120):
+        super().__init__(parent)
+
+        self.parent = parent
+        self.topleft = self.parent.topleft
+        item_count = len(os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ChessImgPNG"))) + 1
+        self.items_per_row = 4
+        self.xpos = int((self.parent.WindowWidth / 2) - (squaresize * self.items_per_row) / 2)
+        self.ypos = int((self.parent.WindowHeight / 2) - (squaresize * ((item_count + self.items_per_row - 1) // self.items_per_row)) / 2) + self.parent.ExitSize/2
+        self.squaresize = int(squaresize)
+        self.BGcolor = QColor(40, 40, 40, 220)
+
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        monitor = get_monitors()[0]
+        self.setGeometry(0, 0, monitor.width, monitor.height)
+
+        self.init_promotion_buttons()
+        self.show()
+
+    def init_promotion_buttons(self):
+        path = os.path.dirname(os.path.abspath(__file__))
+        self.buttons = []
+        count = 0
+        for style in os.listdir(os.path.join(path, "ChessImgPNG")):
+            if self.parent.PieceStyle == style:
+                color = QColor(50, 120, 50, 150)
+            else:
+                color = QColor(50, 50, 50, 150)
+            self.image = QPixmap(os.path.join(path, "ChessImgPNG", style, "bk.png"))
+            self.image = self.image.scaled(int(self.squaresize), int(self.squaresize), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            button = Button(
+                image=self.image,
+                text=style,
+                width=self.squaresize,
+                height=self.squaresize,
+                xpos=((count % self.items_per_row) * self.squaresize) + self.xpos,
+                ypos=self.ypos + (self.squaresize * (count // self.items_per_row)),
+                color=color,
+                hovercolor=QColor(100, 100, 100, 250),
+                textcolor=QColor(255, 255, 255),
+                hovertextcolor=QColor(255, 255, 255),
+                action=lambda pc=style: self.select_piece(pc),
+                parent=self
+            )
+            self.buttons.append(button)
+            count += 1
+        vectorlist = ["ChessImgVec"]
+        for style in vectorlist:
+            if self.parent.PieceStyle == style:
+                color = QColor(50, 150, 50, 150)
+            else:
+                color = QColor(50, 50, 50, 200)
+            self.image = self.parent.SVG.getSVG(f"KingBlack", int(self.squaresize))
+            button = Button(
+                image=self.image,
+                text=style,
+                width=self.squaresize,
+                height=self.squaresize,
+                xpos=((count % self.items_per_row) * self.squaresize) + self.xpos,
+                ypos=self.ypos + (self.squaresize * (count // self.items_per_row)),
+                color=color,
+                hovercolor=QColor(100, 100, 100, 250),
+                textcolor=QColor(255, 255, 255),
+                hovertextcolor=QColor(255, 255, 255),
+                action=lambda pc=style: self.select_piece(pc),
+                parent=self
+            )
+            self.buttons.append(button)
+            count += 1
+
+        self.WindowWidth = self.squaresize * self.items_per_row
+        self.WindowHeight = self.squaresize * ((count + self.items_per_row - 1) // self.items_per_row)
+
+    def paintEvent(self, event):
+        self.topleft = self.parent.topleft
+        x = self.xpos + (self.topleft.x() if self.topleft else 0)
+        y = self.ypos + (self.topleft.y() if self.topleft else 0)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(x, y, self.WindowWidth, self.WindowHeight)
+        painter.setBrush(self.BGcolor)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(rect)
+
+        for button in self.buttons:
+            button.paint(painter)
+
+    def mouseMoveEvent(self, event):
+        for button in self.buttons:
+            button.hovered = button.contains(event.pos())
+        self.update()
+
+    def mousePressEvent(self, event):
+        for button in self.buttons:
+            if button.contains(event.pos()):
+                button.on_click()
+
+    def contains(self, pos):
+        rect = QRectF(self.xpos, self.ypos, self.width, self.height)
+        return rect.contains(pos)
+
+    def select_piece(self, style):
+        self.parent.PieceStyle = style
+        self.parent.SM.play("promote")
+        self.close()  # closes the popup
+
 
 ### Main Window ###
 class WindowGui(QWidget):
@@ -1208,6 +1336,9 @@ class WindowGui(QWidget):
         self.MHList = []
         self.prevMHList = []
         self.fiftyMoveCounter = 0
+
+        self.settings_window = None
+        self.PieceStyle = "ChessImgVec"
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1296,6 +1427,21 @@ class WindowGui(QWidget):
                                      height=self.ExitSize,
                                      xpos=self.WindowWidth -
                                      (self.ExitSize + 40)*3,
+                                     ypos=0,
+                                     pen=True,
+                                     parent=self)
+        SettingsImage = QPixmap(os.path.join(self.path, "images", "Settings_Icon.png"))
+        SettingsImage = SettingsImage.scaled(int(
+            self.ExitSize*0.8), int(self.ExitSize*0.8), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.SettingsButton = Button(text="Settings",
+                                     color=QColor(0, 0, 0, 0),
+                                     hovercolor=QColor(255, 255, 255, 40),
+                                     action=self.open_settings,
+                                     image=SettingsImage,
+                                     width=self.ExitSize+40,
+                                     height=self.ExitSize,
+                                     xpos=self.WindowWidth -
+                                     (self.ExitSize + 40)*4,
                                      ypos=0,
                                      pen=True,
                                      parent=self)
@@ -1682,6 +1828,12 @@ class WindowGui(QWidget):
         self.prevMHList = self.MHList.copy()
 
     ## Window Control Methods ###
+    def open_settings(self):
+        if self.promotion_window is not None and self.promotion_window.isVisible():
+            return
+        if self.settings_window is None or not self.settings_window.isVisible():
+            self.settings_window = SettingsWindow(parent=self, squaresize=self.squaresize*1.2)
+       
     def close_app(self):
         print("Exiting application")
         self.SM.shutdown()
@@ -1696,6 +1848,8 @@ class WindowGui(QWidget):
         self.hide()
         if self.promotion_window:
             self.promotion_window.hide()
+        if self.settings_window:
+            self.settings_window.hide()
         if not hasattr(self, 'tray_icon'):
             self.tray_icon = QSystemTrayIcon(self)
             svg_pixmap = self.SVG.getSVG("KingWhite", 64)
@@ -1717,6 +1871,8 @@ class WindowGui(QWidget):
         self.show()
         if self.promotion_window:
             self.promotion_window.show()
+        if self.settings_window:
+            self.settings_window.show()
         self.activateWindow()
         self.update()
 
